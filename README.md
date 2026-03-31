@@ -32,7 +32,7 @@ resync-claw restore --full openclaw.bak.20260331 /tmp/openclaw_restore/
 # Restore a specific file from snapshot
 resync-claw restore --file openclaw.bak.20260331 workspace-coding/AGENTS.md /tmp/ag.md
 
-# Install cron (every 2 days at 04:00)
+# Install cron (daily at 04:00)
 resync-claw install-cron
 
 # Remove cron

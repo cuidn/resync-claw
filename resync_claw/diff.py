@@ -23,14 +23,12 @@ def compare_snapshots(
     dest_parent: str,
     snap_old: str,
     snap_new: str,
-    show_content_diff: bool = False,
-) -> tuple[list[str], list[str], list[str]]:
+) -> tuple[list[str], list[str]]:
     """
-    Compare two snapshots and return lists of (added, modified, deleted) files.
+    Compare two snapshots and return (changed, deleted) file lists.
 
-    added:     files present in snap_new but not in snap_old
-    modified:  files present in both but content differs
-    deleted:   files present in snap_old but not in snap_new
+    changed:  files that differ (new or modified) — present in snap_new, absent or different in snap_old
+    deleted:  files absent in snap_new — present in snap_old, gone in snap_new
     """
     snap_old_path = os.path.join(dest_parent, snap_old)
     snap_new_path = os.path.join(dest_parent, snap_new)
@@ -46,14 +44,14 @@ def compare_snapshots(
     # rsync -n (dry-run) --itemize-changes newsnap/ oldsnap/
     # Items that rsync would COPY from newsnap -> oldsnap are those that exist in
     # newsnap but NOT in oldsnap, or exist in both but differ.
+    # -c (checksum) ensures content changes are detected even if size/mtime are same
     added_mod_cmd = [
-        "rsync", "-n", "--itemize-changes", "-a",
+        "rsync", "-n", "--itemize-changes", "-a", "-c",
         snap_new_path + "/",
         snap_old_path + "/",
     ] + exclude_args
 
-    added: list[str] = []
-    modified: list[str] = []
+    changed: list[str] = []
 
     result_am = subprocess.run(
         added_mod_cmd,
@@ -68,27 +66,29 @@ def compare_snapshots(
     for line in result_am.stdout.strip().split("\n"):
         if not line.strip():
             continue
-        # Line format: `<flags> filename`
         parts = line.split(maxsplit=1)
         if len(parts) < 2:
             continue
         flags = parts[0]
         path = parts[1]
-        # 'h' flag = hard link (skip), 'c' = local change, 'L' = symlink
-        if "h" in flags:
+        if not flags:
             continue
-        if flags.startswith("<") or ". .d" in flags or "deleting" in flags:
+        op = flags[0]
+        # Skip hard links and symlinks
+        if "h" in flags or "L" in flags:
             continue
-        # Item is being copied from new -> old means it exists in new, not old or differs
-        if ">" in flags or (flags and flags[0] in ("c", "f", "d", "s", "o", "p", "i")):
-            # Check if it's a directory (trailing /) or just a file
-            if flags.endswith("/") or "f" in flags or "c" in flags or "s" in flags:
-                modified.append(path)
-            else:
-                added.append(path)
+        if op == ">":
+            # File being copied from new -> old: exists in new, absent or different in old
+            if "d" in flags[1:]:
+                continue  # skip directories
+            changed.append(path)
+        elif op == "<":
+            # Receiver has file (shouldn't appear in sender output, skip)
+            continue
 
     # --- Files deleted in snap_new (present in snap_old, gone) ---
-    # Run rsync the other way: what would be deleted from snap_new to match snap_old
+    # Run rsync the other way: files that exist in snap_old but NOT in snap_new
+    # (without --delete, >f means "exists in source but not in dest")
     deleted_cmd = [
         "rsync", "-n", "--itemize-changes", "-a",
         snap_old_path + "/",
@@ -114,61 +114,59 @@ def compare_snapshots(
             continue
         flags = parts[0]
         path = parts[1]
-        if "h" in flags:
+        if not flags:
             continue
-        # '>' flag means item would be transferred from old -> new (so it exists
-        # in old but not in new, i.e. deleted from new's perspective)
-        if ">" in flags:
-            deleted.append(path)
-        elif "deleting" in flags:
-            deleted.append(path)
+        op = flags[0]
+        if "h" in flags or "L" in flags:
+            continue
+        if op == ">":
+            # File being copied from old -> new: exists in old, not in new
+            # = deleted from new's perspective
+            # Only "+" in flags means file is NEW in dest (not present there)
+            # "s" (size) or "c" (checksum) means file exists in both but differs
+            if "d" in flags[1:]:
+                continue  # skip directories
+            if "+" in flags:
+                deleted.append(path)
 
-    return added, modified, deleted
+    return changed, deleted
 
 
 def format_compare_output(
     snap_old: str,
     snap_new: str,
-    added: list[str],
-    modified: list[str],
+    changed: list[str],
     deleted: list[str],
+    verbose: bool = False,
 ) -> str:
     """Format the comparison result into a human-readable string."""
-    from .retention import format_size
-    from .backup import count_files_and_size, SNAPSHOT_PREFIX
-
     lines: list[str] = []
     lines.append(f"Comparing snapshots: {snap_old}  →  {snap_new}")
     lines.append("=" * 72)
 
-    total_changed = len(added) + len(modified) + len(deleted)
+    total_changed = len(changed) + len(deleted)
 
     if total_changed == 0:
         lines.append("No differences — snapshots are identical.")
         return "\n".join(lines)
 
-    if added:
-        lines.append(f"\n  [+ NEW]  {len(added)} file(s) added")
-        for f in sorted(added)[:50]:
-            lines.append(f"    {f}")
-        if len(added) > 50:
-            lines.append(f"    ... and {len(added) - 50} more (run with --verbose for full list)")
+    limit = 200 if verbose else 50
 
-    if modified:
-        lines.append(f"\n  [~ MODIFIED]  {len(modified)} file(s) changed")
-        for f in sorted(modified)[:50]:
+    if changed:
+        lines.append(f"\n  [~ CHANGED]  {len(changed)} file(s)")
+        for f in sorted(changed)[:limit]:
             lines.append(f"    {f}")
-        if len(modified) > 50:
-            lines.append(f"    ... and {len(modified) - 50} more")
+        if len(changed) > limit:
+            lines.append(f"    ... and {len(changed) - limit} more (use --verbose for full list)")
 
     if deleted:
         lines.append(f"\n  [- DELETED]  {len(deleted)} file(s) removed")
-        for f in sorted(deleted)[:50]:
+        for f in sorted(deleted)[:limit]:
             lines.append(f"    {f}")
-        if len(deleted) > 50:
-            lines.append(f"    ... and {len(deleted) - 50} more")
+        if len(deleted) > limit:
+            lines.append(f"    ... and {len(deleted) - limit} more (use --verbose for full list)")
 
     lines.append(f"\n{'─' * 72}")
-    lines.append(f"Summary: {len(added)} added, {len(modified)} modified, {len(deleted)} deleted  |  Total: {total_changed} change(s)")
+    lines.append(f"Summary: {len(changed)} changed, {len(deleted)} deleted  |  Total: {total_changed} change(s)")
 
     return "\n".join(lines)

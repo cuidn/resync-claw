@@ -8,7 +8,7 @@ Usage:
     resync-claw verify <backup_name>
     resync-claw restore --full <backup_name> <target_path> [--force]
     resync-claw restore --file <backup_name> <relative_path> <target_path> [--force]
-    resync-claw compare <backup_old> <backup_new>
+    resync-claw compare <backup_old> <backup_new> [--verbose]
     resync-claw install-cron
     resync-claw remove-cron
     resync-claw --help
@@ -264,7 +264,7 @@ def cmd_remove_cron(args) -> int:
 def cmd_compare(args) -> int:
     dest_parent = args.dest or DEFAULT_DEST_PARENT
     try:
-        added, modified, deleted = compare_snapshots(
+        changed, deleted = compare_snapshots(
             dest_parent=dest_parent,
             snap_old=args.backup_old,
             snap_new=args.backup_new,
@@ -272,9 +272,9 @@ def cmd_compare(args) -> int:
         output = format_compare_output(
             snap_old=args.backup_old,
             snap_new=args.backup_new,
-            added=added,
-            modified=modified,
+            changed=changed,
             deleted=deleted,
+            verbose=args.verbose,
         )
         print(output)
         return 0
@@ -345,6 +345,7 @@ def build_parser() -> argparse.ArgumentParser:
     compare_parser.add_argument("backup_old", help="Older snapshot name (e.g. openclaw.bak.20260330)")
     compare_parser.add_argument("backup_new", help="Newer snapshot name (e.g. openclaw.bak.20260331)")
     compare_parser.add_argument("--dest", metavar="PATH", help=f"Destination (default: {DEFAULT_DEST_PARENT})")
+    compare_parser.add_argument("--verbose", action="store_true", help="Show all changed files (up to 200, default: 50)")
     compare_parser.set_defaults(func=cmd_compare)
 
     # install-cron

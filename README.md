@@ -23,6 +23,9 @@ resync-claw list
 # Check status of last backup
 resync-claw status
 
+# Compare two snapshots (show differences)
+resync-claw compare openclaw.bak.20260330 openclaw.bak.20260331
+
 # Verify a specific snapshot
 resync-claw verify openclaw.bak.20260331
 

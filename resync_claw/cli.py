@@ -8,6 +8,7 @@ Usage:
     resync-claw verify <backup_name>
     resync-claw restore --full <backup_name> <target_path> [--force]
     resync-claw restore --file <backup_name> <relative_path> <target_path> [--force]
+    resync-claw compare <backup_old> <backup_new>
     resync-claw install-cron
     resync-claw remove-cron
     resync-claw --help
@@ -30,6 +31,7 @@ from .backup import (
 )
 from .retention import list_snapshots, enforce_retention, format_size, count_snapshot
 from .resync import resync_full, resync_file, snapshot_exists
+from .diff import compare_snapshots, format_compare_output
 
 # ----------------------------------------------------------------------
 # Logging setup
@@ -259,6 +261,31 @@ def cmd_remove_cron(args) -> int:
     return 0 if success else 1
 
 
+def cmd_compare(args) -> int:
+    dest_parent = args.dest or DEFAULT_DEST_PARENT
+    try:
+        added, modified, deleted = compare_snapshots(
+            dest_parent=dest_parent,
+            snap_old=args.backup_old,
+            snap_new=args.backup_new,
+        )
+        output = format_compare_output(
+            snap_old=args.backup_old,
+            snap_new=args.backup_new,
+            added=added,
+            modified=modified,
+            deleted=deleted,
+        )
+        print(output)
+        return 0
+    except FileNotFoundError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+    except RuntimeError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+
+
 def cmd_help(args) -> int:
     """Print the full usage docstring (shown as --help but as a subcommand)."""
     print(__doc__)
@@ -312,6 +339,13 @@ def build_parser() -> argparse.ArgumentParser:
     restore_parser.add_argument("--force", action="store_true", help="Overwrite if target exists")
     restore_parser.add_argument("--dest", metavar="PATH", help=f"Destination (default: {DEFAULT_DEST_PARENT})")
     restore_parser.set_defaults(func=cmd_restore)
+
+    # compare
+    compare_parser = sub.add_parser("compare", help="Compare two snapshots and show differences")
+    compare_parser.add_argument("backup_old", help="Older snapshot name (e.g. openclaw.bak.20260330)")
+    compare_parser.add_argument("backup_new", help="Newer snapshot name (e.g. openclaw.bak.20260331)")
+    compare_parser.add_argument("--dest", metavar="PATH", help=f"Destination (default: {DEFAULT_DEST_PARENT})")
+    compare_parser.set_defaults(func=cmd_compare)
 
     # install-cron
     cron_install_parser = sub.add_parser("install-cron", help="Install cron job (every day at 04:00)")

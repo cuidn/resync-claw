@@ -31,35 +31,48 @@ def parse_snapshot_date(name: str) -> Optional[datetime]:
 def list_snapshots(dest_parent: str = DEFAULT_DEST_PARENT) -> List[dict]:
     """
     Return all snapshots in dest_parent sorted newest-first.
-    Each entry: {name, date, size_bytes, file_count}
+    Each entry: {name, date, size_bytes, file_count, is_zip}
+    Directories and .zip archives matching the snapshot naming pattern are both included.
     """
     if not os.path.isdir(dest_parent):
         return []
 
     snapshots = []
     for entry in os.scandir(dest_parent):
-        if not entry.is_dir():
-            continue
-        dt = parse_snapshot_date(entry.name)
-        if dt is None:
-            continue
-        snapshots.append(entry.name)
+        name = entry.name
+        # Match directory snapshots: openclaw.bak.YYYYMMDD
+        if entry.is_dir():
+            dt = parse_snapshot_date(name)
+            if dt is not None:
+                snapshots.append(name)
+        # Match zip snapshots: openclaw.bak.YYYYMMDD.zip
+        elif name.endswith(".zip") and entry.is_file():
+            base = name[:-4]  # strip .zip
+            dt = parse_snapshot_date(base)
+            if dt is not None:
+                snapshots.append(name)
 
     # Sort newest first
-    snapshots.sort(key=lambda n: parse_snapshot_date(n), reverse=True)
+    snapshots.sort(key=lambda n: parse_snapshot_date(n[:-4] if n.endswith(".zip") else n), reverse=True)
 
     result = []
     for name in snapshots:
+        is_zip = name.endswith(".zip")
         snap_path = os.path.join(dest_parent, name)
         try:
-            file_count, size_bytes = count_snapshot(snap_path)
+            if is_zip:
+                file_count = 1
+                size_bytes = os.path.getsize(snap_path)
+            else:
+                file_count, size_bytes = count_snapshot(snap_path)
         except Exception:
             file_count, size_bytes = 0, 0
         result.append({
             "name": name,
-            "date": parse_snapshot_date(name).strftime("%Y-%m-%d"),
+            "date": parse_snapshot_date(name[:-4] if is_zip else name).strftime("%Y-%m-%d"),
             "size_bytes": size_bytes,
             "file_count": file_count,
+            "is_zip": is_zip,
         })
 
     return result
@@ -98,7 +111,10 @@ def enforce_retention(dest_parent: str = DEFAULT_DEST_PARENT, keep: int = 3) -> 
         snap_path = os.path.join(dest_parent, snap["name"])
         logger.info("Retention: removing old snapshot %s", snap["name"])
         try:
-            shutil.rmtree(snap_path)
+            if snap.get("is_zip"):
+                os.remove(snap_path)
+            else:
+                shutil.rmtree(snap_path)
             deleted.append(snap["name"])
         except OSError as exc:
             logger.error("Failed to remove %s: %s", snap["name"], exc)

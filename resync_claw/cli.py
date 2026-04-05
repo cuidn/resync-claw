@@ -199,7 +199,8 @@ def cmd_list(args) -> int:
     print(f"{'Snapshot':<30} {'Date':<12} {'Files':>8} {'Size':>10}")
     print("-" * 62)
     for s in snapshots:
-        print(f"{s['name']:<30} {s['date']:<12} {s['file_count']:>8} {format_size(s['size_bytes']):>10}")
+        badge = " [zip]" if s.get("is_zip") else ""
+        print(f"{s['name']:<30} {s['date']:<12} {s['file_count']:>8} {format_size(s['size_bytes']):>10}{badge}")
     return 0
 
 

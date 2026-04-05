@@ -31,7 +31,7 @@ from .backup import (
 )
 from .retention import list_snapshots, enforce_retention, format_size, count_snapshot
 from .resync import resync_full, resync_file, snapshot_exists
-from .diff import compare_snapshots, format_compare_output
+from .diff import format_compare_output
 
 # ----------------------------------------------------------------------
 # Logging setup
@@ -127,11 +127,19 @@ def remove_cron() -> tuple[bool, str]:
 # ----------------------------------------------------------------------
 
 def cmd_run(args) -> int:
+    # Resolve compress: CLI flag > env var > default (False)
+    compress = getattr(args, "compress", False)
+    if not compress:
+        compress = os.environ.get("RESYNC_COMPRESS", "false").lower() in ("true", "1", "yes")
+    remove_original = getattr(args, "remove_original", False)
+
     success, msg = run_backup(
         source=args.source or DEFAULT_SOURCE,
         dest_parent=args.dest or DEFAULT_DEST_PARENT,
         dry_run=args.dry_run,
         force=args.force,
+        compress=compress,
+        remove_original=remove_original,
     )
     print(msg)
     if not success:
@@ -263,15 +271,29 @@ def cmd_remove_cron(args) -> int:
 
 def cmd_compare(args) -> int:
     dest_parent = args.dest or DEFAULT_DEST_PARENT
+
+    # Auto-detect zip comparison: if both args end in .zip, treat as absolute zip paths
+    is_zip = args.backup_old.endswith(".zip") and args.backup_new.endswith(".zip")
+
     try:
-        changed, deleted = compare_snapshots(
-            dest_parent=dest_parent,
-            snap_old=args.backup_old,
-            snap_new=args.backup_new,
-        )
+        if is_zip:
+            from .diff import compare_zips
+            snap_old = args.backup_old
+            snap_new = args.backup_new
+            changed, deleted = compare_zips(snap_old, snap_new)
+        else:
+            from .diff import compare_snapshots
+            changed, deleted = compare_snapshots(
+                dest_parent=dest_parent,
+                snap_old=args.backup_old,
+                snap_new=args.backup_new,
+            )
+            snap_old = args.backup_old
+            snap_new = args.backup_new
+
         output = format_compare_output(
-            snap_old=args.backup_old,
-            snap_new=args.backup_new,
+            snap_old=snap_old,
+            snap_new=snap_new,
             changed=changed,
             deleted=deleted,
             verbose=args.verbose,
@@ -309,6 +331,10 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--force", action="store_true", help="Force overwrite if snapshot exists")
     run_parser.add_argument("--dest", metavar="PATH", help=f"Destination parent (default: {DEFAULT_DEST_PARENT})")
     run_parser.add_argument("--source", metavar="PATH", help=f"Source directory (default: {DEFAULT_SOURCE})")
+    run_parser.add_argument("--compress", action="store_true",
+                            help="Compress snapshot into a zip archive after backup (see RESYNC_COMPRESS env var)")
+    run_parser.add_argument("--remove-original", action="store_true",
+                            help="Delete uncompressed snapshot after zipping (only valid with --compress)")
     run_parser.set_defaults(func=cmd_run)
 
     # status

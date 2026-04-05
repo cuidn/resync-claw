@@ -4,6 +4,7 @@ Tests for resync_claw.backup
 
 import os
 import sys
+import zipfile
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from resync_claw.backup import (
@@ -13,6 +14,7 @@ from resync_claw.backup import (
     write_latest_marker,
     get_latest_marker,
     count_files_and_size,
+    compress_snapshot,
 )
 from resync_claw.resync import is_safe_relative_path
 from datetime import date
@@ -73,3 +75,56 @@ def test_latest_marker(tmp_path):
 def test_latest_marker_missing():
     # Non-existent dir should return None without crashing
     assert get_latest_marker("/nonexistent/path") is None
+
+
+def test_compress_snapshot_creates_zip(tmp_path):
+    """compress_snapshot creates a zip with the right name and content."""
+    # Build a small directory tree to compress
+    snap = tmp_path / "openclaw.bak.20260404"
+    snap.mkdir()
+    (snap / "a.txt").write_text("hello world")  # 11 bytes
+    sub = snap / "sub"
+    sub.mkdir()
+    (sub / "b.txt").write_text("zippy")  # 5 bytes
+
+    ok, msg = compress_snapshot(str(snap), remove_original=False)
+    assert ok is True
+    assert "20260404" in msg
+    assert "reduction" in msg
+
+    zip_path = tmp_path / "openclaw.bak.20260404.zip"
+    assert zip_path.exists()
+
+    # Verify zip contents (arcname is relative to the snapshot directory)
+    with zipfile.ZipFile(str(zip_path), "r") as zf:
+        names = zf.namelist()
+        assert "a.txt" in names
+        assert "sub/b.txt" in names
+
+    # Original directory must still exist
+    assert snap.exists()
+
+
+def test_compress_snapshot_remove_original(tmp_path):
+    """compress_snapshot removes the original directory when remove_original=True."""
+    snap = tmp_path / "openclaw.bak.20260404"
+    snap.mkdir()
+    (snap / "file.txt").write_text("content")
+
+    ok, msg = compress_snapshot(str(snap), remove_original=True)
+    assert ok is True
+    assert "reduction" in msg
+    assert not snap.exists(), "Original directory should be deleted"
+
+    zip_path = tmp_path / "openclaw.bak.20260404.zip"
+    assert zip_path.exists()
+
+
+def test_compress_snapshot_nonexistent_path(tmp_path):
+    """compress_snapshot returns False without crashing when path doesn't exist."""
+    nonexistent = tmp_path / "does_not_exist"
+    ok, msg = compress_snapshot(str(nonexistent), remove_original=False)
+    assert ok is False
+    assert "Compression failed" in msg
+    # No partial zip should be left behind
+    assert not (tmp_path / "does_not_exist.zip").exists()

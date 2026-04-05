@@ -8,6 +8,7 @@ import subprocess
 import time
 import random
 import logging
+import zipfile
 from datetime import date
 from pathlib import Path
 from typing import Optional
@@ -150,9 +151,16 @@ def run_backup(
     force: bool = False,
     timeout_secs: int = 3600,
     max_retries: int = 2,
+    compress: bool = False,
+    remove_original: bool = False,
 ) -> tuple[bool, str]:
     """
     Run the backup from source to dest_parent/openclaw.bak.YYYYMMDD/.
+
+    If compress is True, the snapshot is zipped after a successful backup
+    (using zipfile.ZIP_DEFLATED). If remove_original is also True, the
+    uncompressed directory is deleted after zipping. Compression errors are
+    logged as warnings but do not block the success return.
 
     Returns (success: bool, message: str).
     """
@@ -250,6 +258,14 @@ def run_backup(
     write_verify_marker(dest_snap, src_files, src_bytes)
     write_latest_marker(dest_parent, snap_name)
 
+    # Compression (non-blocking — warns on failure but does not fail the backup)
+    if compress:
+        ok, msg = compress_snapshot(dest_snap, remove_original=remove_original)
+        if ok:
+            logger.info("Compression: %s", msg)
+        else:
+            logger.warning("Compression skipped: %s", msg)
+
     return True, f"Backup complete: {snap_name} ({dst_files} files, {dst_bytes} bytes)"
 
 
@@ -285,3 +301,54 @@ def shutil_rmtree(path: str) -> None:
             time.sleep(2)
     # Last resort
     subprocess.run(["rm", "-rf", path], capture_output=True)
+
+
+def compress_snapshot(snapshot_path: str, remove_original: bool = False) -> tuple[bool, str]:
+    """
+    Compress a snapshot directory into a zip archive.
+
+    Returns (success: bool, message: str).
+    If the directory is empty or missing, returns (False, ...) without creating a zip.
+    Other compression failures log a warning but leave the original intact.
+    """
+    if not os.path.isdir(snapshot_path):
+        return False, f"Compression failed: snapshot directory not found: {snapshot_path}"
+
+    snap_name = os.path.basename(snapshot_path)
+    zip_name = snap_name + ".zip"
+    zip_path = os.path.join(os.path.dirname(snapshot_path), zip_name)
+
+    # Compute original size before zipping
+    _, orig_bytes = count_files_and_size(snapshot_path)
+
+    if orig_bytes == 0:
+        return False, f"Compression failed: snapshot is empty: {snapshot_path}"
+
+    try:
+        with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            for root, dirs, files in os.walk(snapshot_path):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    arcname = os.path.relpath(file_path, snapshot_path)
+                    zf.write(file_path, arcname)
+
+        zip_bytes = os.path.getsize(zip_path)
+        ratio = (1 - zip_bytes / orig_bytes) * 100 if orig_bytes > 0 else 0
+        logger.info("Compressed %s: %d bytes -> %d bytes (%.1f%% reduction, saved %d bytes)",
+                    snap_name, orig_bytes, zip_bytes, ratio, orig_bytes - zip_bytes)
+
+        if remove_original:
+            shutil_rmtree(snapshot_path)
+            logger.info("Removed original snapshot directory: %s", snap_name)
+
+        return True, f"Compressed {snap_name}: {orig_bytes} bytes -> {zip_bytes} bytes ({ratio:.1f}% reduction)"
+
+    except Exception as exc:
+        logger.warning("Compression failed for %s: %s", snap_name, exc)
+        # Clean up partial zip if it exists
+        if os.path.exists(zip_path):
+            try:
+                os.remove(zip_path)
+            except OSError:
+                pass
+        return False, f"Compression failed: {exc}"

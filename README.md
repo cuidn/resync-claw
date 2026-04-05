@@ -59,6 +59,27 @@ Runs daily at 04:00 AM. Installed via crontab (not root).
 0 4 * * * $HOME/.local/bin/resync-claw run --force >> $HOME/.openclaw/logs/backup-cron.log 2>&1
 ```
 
+## Compression
+
+After a successful backup, you can compress the snapshot into a zip archive to save disk space:
+
+```bash
+# Compress the snapshot after backup (saved as openclaw.bak.YYYYMMDD.zip)
+resync-claw run --compress
+
+# Compress and delete the uncompressed folder
+resync-claw run --compress --remove-original
+```
+
+Alternatively, set the environment variable to enable compression by default:
+
+```bash
+export RESYNC_COMPRESS=true
+resync-claw run --force
+```
+
+Compression uses `zipfile.ZIP_DEFLATED`. If zipping fails, a warning is logged but the backup is not marked as failed. The resulting zip file is placed next to the snapshot directory.
+
 ## Exit Codes
 
 | Code | Meaning |

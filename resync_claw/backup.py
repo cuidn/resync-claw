@@ -29,6 +29,9 @@ RSYNC_EXCLUDES = [
     "*.pyo",
     ".DS_Store",
     ".Trash-*",
+    # Old extension backup directories (node_modules included, these are huge)
+    "extensions-backup-lossless-claw-v0.5.2/",
+    "extensions-backup-lossless-claw-v0.7.0/",
 ]
 
 # Snapshot naming prefix

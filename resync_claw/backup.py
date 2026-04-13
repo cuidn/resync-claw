@@ -29,9 +29,16 @@ RSYNC_EXCLUDES = [
     "*.pyo",
     ".DS_Store",
     ".Trash-*",
-    # Old extension backup directories (node_modules included, these are huge)
+    # Old extension backup directories (huge, node_modules-equivalent size)
     "extensions-backup-lossless-claw-v0.5.2/",
     "extensions-backup-lossless-claw-v0.7.0/",
+    # Transient Python venvs that get recreated by skills/scripts
+    "workspace/.venv-pdf/",
+    # Local Qdrant storage (my-laptop MCP proxies to dc-thinkpad GPU;
+    # local Qdrant is not the primary KB; saves ~233MB/snapshot)
+    "workspace/storage/",
+    # Stale extension directories accidentally created in workspace
+    "lossless-claw-enhanced/",
 ]
 
 # Snapshot naming prefix

@@ -34,6 +34,20 @@ RSYNC_EXCLUDES = [
     "extensions-backup-lossless-claw-v0.7.0/",
     # Transient Python venvs that get recreated by skills/scripts
     "workspace/.venv-pdf/",
+    # All Python venvs (any depth)
+    "*/.venv/",
+    "*/.venv-pdf/",
+    # Python pip packages — huge, low-value, recreated on restore
+    "*/site-packages/",
+    # Git internals — objects/pack is fine (compressed), but metadata
+    # can be safely excluded; git reset will reconstruct from pack
+    "*/.git/objects/pack/",
+    "*/.git/info/",
+    "*/.git/refs/tags/",
+    "*/.git/refs/heads/",
+    "*/.git/refs/remotes/",
+    "*/.git/branches/",
+    "*/.git/hooks/",
     # Local Qdrant storage (my-laptop MCP proxies to dc-thinkpad GPU;
     # local Qdrant is not the primary KB; saves ~233MB/snapshot)
     "workspace/storage/",

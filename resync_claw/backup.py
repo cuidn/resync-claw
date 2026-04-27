@@ -59,6 +59,8 @@ RSYNC_EXCLUDES = [
     "extensions-backup-*/",
     # Agent embedding model cache (re-downloaded on demand, ~314MB per agent)
     "agents/*/qmd/xdg-cache/",
+    # Git repository metadata (source repos can be re-cloned; saves ~18MB/workspace)
+    "*/.git/",
 ]
 
 # Snapshot naming prefix

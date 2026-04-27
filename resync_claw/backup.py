@@ -53,6 +53,12 @@ RSYNC_EXCLUDES = [
     "workspace/storage/",
     # Stale extension directories accidentally created in workspace
     "lossless-claw-enhanced/",
+    # Plugin runtime dependencies (downloaded on demand, ~2.8GB, low backup value)
+    "plugin-runtime-deps/",
+    # All extension backup directories (any version)
+    "extensions-backup-*/",
+    # Agent embedding model cache (re-downloaded on demand, ~314MB per agent)
+    "agents/*/qmd/xdg-cache/",
 ]
 
 # Snapshot naming prefix

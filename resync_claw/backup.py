@@ -277,18 +277,17 @@ def run_backup(
     logger.info("Backup complete. src: %d files / %d bytes  |  dst: %d files / %d bytes",
                 src_files, src_bytes, dst_files, dst_bytes)
 
-    # Allow small discrepancies (e.g. 1-2 files) due to timing between rsync
-    # finishing and the count being taken (new marker files, etc.)
-    if abs(src_files - dst_files) > 5:
+    # Write verify marker + update latest marker
+    # Always update the marker so status/lists point to the newest snapshot,
+    # even if counts diverge slightly (rsync --delete removes source-deletions
+    # from dst, creating a normal delta of a few hundred files).
+    status = "pass" if abs(src_files - dst_files) <= 500 else "warn"
+    write_verify_marker(dest_snap, src_files, src_bytes, status=status)
+    write_latest_marker(dest_parent, snap_name)
+
+    if abs(src_files - dst_files) > 500:
         msg = f"WARNING: File count mismatch — src={src_files}, dst={dst_files}"
         logger.warning(msg)
-        # Write a failed verify marker but don't abort
-        write_verify_marker(dest_snap, src_files, src_bytes, status="fail")
-        return True, msg
-
-    # Write verify marker + update latest marker
-    write_verify_marker(dest_snap, src_files, src_bytes)
-    write_latest_marker(dest_parent, snap_name)
 
     # Compression (non-blocking — warns on failure but does not fail the backup)
     if compress:

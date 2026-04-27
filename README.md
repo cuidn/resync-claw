@@ -47,7 +47,7 @@ resync-claw remove-cron
 - **Source:** `$HOME/.openclaw/`
 - **Destination:** `$HOME/ClawBackup/`
 - **Snapshot naming:** `openclaw.bak.YYYYMMDD`
-- **Excludes:** `tmp/`, `.cache/`, `logs/`, `__pycache__/`, `node_modules/`, `*.pyc`, `*.pyo`, `.DS_Store`, `.Trash-*`
+- **Excludes:** `tmp/`, `.cache/`, `logs/`, `__pycache__/`, `node_modules/`, `*.pyc`, `*.pyo`, `.DS_Store`, `.Trash-*`, `plugin-runtime-deps/`, `extensions-backup-*/`, `agents/*/qmd/xdg-cache/`, `*/.git/`, `*/.venv/`, `*/site-packages/`, `workspace/storage/`
 - **Includes:** all workspaces (`workspace-coding`, `workspace-claude`, etc.)
 - **Retention:** last 7 snapshots auto-deleted after each successful backup
 
